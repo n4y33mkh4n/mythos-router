@@ -6,8 +6,7 @@
 import { readFileSync, writeFileSync, existsSync, statSync, appendFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { createHash } from 'node:crypto';
-// @ts-ignore - node:sqlite is experimental in some versions
-import { DatabaseSync } from 'node:sqlite';
+import { getDatabaseSync } from './sqlite-loader.js';
 import { MEMORY_FILE, MEMORY_DB_FILE, MEMORY_MAX_LINES } from './config.js';
 import { timestamp, c, info, success, warn, dryRunBadge } from './utils.js';
 
@@ -48,15 +47,16 @@ function getMemoryHash(): string {
  * 3. Failure Isolation: A database failure MUST NEVER affect system correctness.
  *    If SQLite fails, the system continues with reduced search performance.
  */
-let _db: DatabaseSync | null = null;
+let _db: InstanceType<ReturnType<typeof getDatabaseSync>> | null = null;
 
 /**
  * Returns the open SQLite database instance.
  * Initializes schema and triggers if needed.
  */
-function getDb(): DatabaseSync {
+function getDb(): InstanceType<ReturnType<typeof getDatabaseSync>> {
   if (_db) return _db;
 
+  const DatabaseSync = getDatabaseSync();
   const path = getDbPath();
   _db = new DatabaseSync(path);
 
