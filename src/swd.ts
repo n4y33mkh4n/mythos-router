@@ -3,9 +3,9 @@
 //  Strict Write Discipline — Production API (v1)
 // ─────────────────────────────────────────────────────────────
 
-import { readFileSync, writeFileSync, statSync, existsSync, unlinkSync } from 'node:fs';
+import { readFileSync, writeFileSync, statSync, existsSync, unlinkSync, realpathSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { resolve, relative, isAbsolute } from 'node:path';
+import { resolve, relative, isAbsolute, dirname, basename } from 'node:path';
 
 // ── Public Types ─────────────────────────────────────────────
 export type ActionIntent = 'MUTATE' | 'NOOP';
@@ -158,7 +158,15 @@ export class SWDEngine {
     try {
       switch (action.operation) {
         case 'CREATE':
+          if (existsSync(absPath)) {
+            throw new Error(`CREATE failed: file already exists at ${action.path}`);
+          }
+          if (action.content !== undefined) writeFileSync(absPath, action.content);
+          break;
         case 'MODIFY':
+          if (!existsSync(absPath)) {
+            throw new Error(`MODIFY failed: file does not exist at ${action.path}`);
+          }
           if (action.content !== undefined) writeFileSync(absPath, action.content);
           break;
         case 'DELETE':
@@ -185,12 +193,20 @@ export class SWDEngine {
         if (!after.exists) return { action, status: 'failed', detail: `File missing after MODIFY: ${action.path}` };
         break;
       case 'DELETE':
+        if (!before.exists) return { action, status: 'drift', detail: `DELETE on non-existent file: ${action.path}` };
         if (after.exists) return { action, status: 'failed', detail: `File still exists after DELETE: ${action.path}` };
         break;
     }
 
     if (action.contentHash && after.hash !== action.contentHash) {
       return { action, status: 'drift', detail: `Hash mismatch on ${action.path}: expected ${action.contentHash.slice(0, 12)}, got ${after.hash.slice(0, 12)}` };
+    }
+
+    if (action.content !== undefined && ['CREATE', 'MODIFY'].includes(action.operation)) {
+      const expectedHash = createHash('sha256').update(action.content).digest('hex');
+      if (after.hash !== expectedHash) {
+        return { action, status: 'drift', detail: `Written content does not match intended content for ${action.path}` };
+      }
     }
 
     return {
@@ -270,23 +286,40 @@ class InternalSessionContext {
 export function resolveSafePath(unsafePath: string): string {
   const cwd = process.cwd();
   const absPath = resolve(cwd, unsafePath);
-  const relPath = relative(cwd, absPath);
+  
+  let realPath = absPath;
+  try {
+    realPath = realpathSync(absPath);
+  } catch (e: any) {
+    if (e.code === 'ENOENT') {
+      const parentDir = dirname(absPath);
+      try {
+        realPath = resolve(realpathSync(parentDir), basename(absPath));
+      } catch {
+        // Fallback if parent also doesn't exist
+      }
+    }
+  }
+
+  const relPath = relative(cwd, realPath);
   if (relPath.startsWith('..') || isAbsolute(relPath)) {
     throw new Error(`SECURITY VIOLATION: Path traversal detected on '${unsafePath}'.`);
   }
-  return absPath;
+  return realPath;
 }
 
-export function snapshotFile(filePath: string): FileSnapshot {
-  const absPath = resolveSafePath(filePath); 
+export function snapshotFile(safeAbsPath: string): FileSnapshot {
   try {
-    if (!existsSync(absPath)) return { path: absPath, exists: false, size: 0, mtime: 0, hash: '', content: null };
-    const stat = statSync(absPath);
-    const content = readFileSync(absPath);
+    if (!existsSync(safeAbsPath)) return { path: safeAbsPath, exists: false, size: 0, mtime: 0, hash: '', content: null };
+    const stat = statSync(safeAbsPath);
+    const content = readFileSync(safeAbsPath);
     const hash = createHash('sha256').update(content).digest('hex');
-    return { path: absPath, exists: true, size: stat.size, mtime: stat.mtimeMs, hash, content };
-  } catch {
-    return { path: absPath, exists: false, size: 0, mtime: 0, hash: '', content: null };
+    return { path: safeAbsPath, exists: true, size: stat.size, mtime: stat.mtimeMs, hash, content };
+  } catch (err: any) {
+    if (err.code === 'ENOENT') {
+      return { path: safeAbsPath, exists: false, size: 0, mtime: 0, hash: '', content: null };
+    }
+    throw new Error(`Failed to snapshot file ${safeAbsPath}: ${err.message}`);
   }
 }
 
@@ -337,9 +370,16 @@ export function parseActions(output: string): FileAction[] {
     }
 
     if (path && operation && description) {
+      if (path.trim() === '' || path.length > 500) continue;
+
+      const opUpper = operation.toUpperCase();
+      if (!['CREATE', 'MODIFY', 'DELETE', 'READ'].includes(opUpper)) {
+        continue;
+      }
+
       actions.push({
         path,
-        operation: operation.toUpperCase() as FileAction['operation'],
+        operation: opUpper as FileAction['operation'],
         intent: (intent?.toUpperCase() === 'NOOP' ? 'NOOP' : 'MUTATE') as ActionIntent,
         contentHash,
         description,
