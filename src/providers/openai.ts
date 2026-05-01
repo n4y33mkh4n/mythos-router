@@ -16,7 +16,6 @@ export interface OpenAIProviderConfig {
   supportsThinking?: boolean; // DeepSeek reasoner, o1/o3 have reasoning
 }
 
-// ── SSE Line Parser ──────────────────────────────────────────
 function parseSSELine(line: string): Record<string, unknown> | null {
   if (!line.startsWith('data: ')) return null;
   const data = line.slice(6).trim();
@@ -145,7 +144,7 @@ export class OpenAIProvider implements BaseProvider {
       throw new Error(`[${this.id}] No response body received`);
     }
 
-    const { thinkingText, responseText, inputTokens: parsedInputTokens, outputTokens: parsedOutputTokens } = 
+    const { thinkingText, responseText, inputTokens: parsedInputTokens, outputTokens: parsedOutputTokens } =
       await this.processSSEStream(response.body.getReader(), options);
 
     let inputTokens = parsedInputTokens;
