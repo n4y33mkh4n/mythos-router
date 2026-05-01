@@ -107,7 +107,15 @@ function renderRecentFailures(telemetry: TelemetryStore, verbose?: boolean): voi
 }
 
 export async function providersCommand(options: ProvidersOptions): Promise<void> {
-  const telemetry = TelemetryStore.getInstance();
+  let telemetry: TelemetryStore;
+  try {
+    telemetry = TelemetryStore.getInstance();
+  } catch (err) {
+    console.log(BANNER);
+    console.log(`  ${c.yellow}The 'mythos providers' dashboard requires Node.js >=22.5.0 for SQLite telemetry.${c.reset}`);
+    console.log(`  ${c.dim}Please upgrade Node.js to view detailed provider metrics and routing decisions.${c.reset}`);
+    return;
+  }
   
   const render = () => {
     // Clear screen if watch mode
