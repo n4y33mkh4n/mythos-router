@@ -1,3 +1,8 @@
+// ─────────────────────────────────────────────────────────────
+//  mythos-router :: providers/types.ts
+//  Universal provider contract — zero provider leakage
+// ─────────────────────────────────────────────────────────────
+
 // ── Unified Message Format ───────────────────────────────────
 export interface Message {
   role: 'user' | 'assistant';
@@ -43,6 +48,10 @@ export interface UnifiedResponse {
 export interface RequestOptions {
   taskType?: 'chat' | 'code' | 'analysis' | 'unknown';
   deterministic?: boolean;
+  forceProvider?: string;
+  allowFallback?: boolean;
+  timeoutMs?: number;
+  requiresTools?: boolean;
   signal?: AbortSignal;
 }
 
