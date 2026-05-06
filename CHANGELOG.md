@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.6.1] — 2026-05-06
+
+### Fixed
+- **SWD Metadata Accuracy** — File hash metadata is now written only after successful, non-rolled-back SWD runs, preventing stale verification data after failed writes or rollbacks.
+- **Dream Metadata Preservation** — Memory compression now preserves `mythos:file` metadata, keeping SHA-256 drift detection intact after `mythos dream`.
+- **Test-Healing Drift Tracking** — Successful SWD fixes produced during test-healing now record file metadata for later verification.
+- **Anthropic Timeout Handling** — Anthropic requests now receive abort signals directly, improving watchdog timeout and fallback reliability during stalled streams.
+
+---
+
 ## [1.6.0] — 2026-05-03
 
 ### Added
@@ -237,6 +247,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Correction Turns** — max 2 retries before yielding to human.
 - **Dream/Verify Commands** — memory compression and drift detection.
 
+[1.6.1]: https://github.com/thewaltero/mythos-router/releases/tag/v1.6.1
 [1.6.0]: https://github.com/thewaltero/mythos-router/releases/tag/v1.6.0
 [1.5.3]: https://github.com/thewaltero/mythos-router/releases/tag/v1.5.3
 [1.5.0]: https://github.com/thewaltero/mythos-router/releases/tag/v1.5.0
