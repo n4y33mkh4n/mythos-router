@@ -29,7 +29,7 @@ export async function dreamCommand(options: {
     console.log(`  ${dryRunBadge()} ${c.dim}Memory writes will be previewed, not executed.${c.reset}\n`);
   }
 
-  initMemory();
+  initMemory(dryRun);
   const { entries, raw } = readMemory();
   const count = entries.length;
 
@@ -133,16 +133,18 @@ export async function dreamCommand(options: {
     } else {
       costUSD = (response.inputTokens * COST_PER_INPUT_TOKEN) + (response.outputTokens * COST_PER_OUTPUT_TOKEN);
     }
-    saveSessionMetric({
-      command: 'dream',
-      project: path.basename(process.cwd()),
-      inputTokens: response.inputTokens,
-      outputTokens: response.outputTokens,
-      turns: 1,
-      costUSD,
-      durationMs: 0, // Not easily trackable without start time, 0 is fine
-      timestamp: new Date().toISOString(),
-    });
+    if (!dryRun) {
+      saveSessionMetric({
+        command: 'dream',
+        project: path.basename(process.cwd()),
+        inputTokens: response.inputTokens,
+        outputTokens: response.outputTokens,
+        turns: 1,
+        costUSD,
+        durationMs: 0, // Not easily trackable without start time, 0 is fine
+        timestamp: new Date().toISOString(),
+      });
+    }
 
   } catch (err: any) {
     spinner.stop();
