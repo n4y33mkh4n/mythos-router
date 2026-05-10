@@ -77,4 +77,38 @@ describe('CLI Smoke Tests', () => {
       );
     }
   });
+
+  it('runs dream --dry-run in a temporary directory without creating memory files', () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'mythos-test-'));
+    const cliPath = join(process.cwd(), 'dist', 'cli.js');
+
+    try {
+      const output = execFileSync(
+        process.execPath,
+        [cliPath, 'dream', '--dry-run'],
+        {
+          cwd: tempDir,
+          encoding: 'utf-8',
+        },
+      );
+
+      assert.ok(output.includes('Memory writes will be previewed'));
+
+      assert.equal(
+        existsSync(join(tempDir, 'MEMORY.md')),
+        false,
+        'dream --dry-run should not create MEMORY.md',
+      );
+
+      assert.equal(
+        existsSync(join(tempDir, 'memory.db')),
+        false,
+        'dream --dry-run should not create memory.db',
+      );
+    } catch (err: any) {
+      assert.fail(
+        `dream --dry-run failed: ${err.message}\n${err.stdout ?? ''}\n${err.stderr ?? ''}`,
+      );
+    }
+  });
 });
