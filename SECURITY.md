@@ -11,9 +11,11 @@ All file operations are verified against the actual filesystem before being acce
 
 ## Safe Execution
 
-* Shell command execution is **restricted via a whitelist**
-* No arbitrary commands are executed
-* Optional `--paranoid` mode disables all shell access completely
+* AI-proposed file writes are routed through Strict Write Discipline (SWD) and verified against filesystem state.
+* Normal SWD file operations do not execute shell commands.
+* Git sandboxing uses fixed `git` subcommands with argument arrays.
+* `--test-cmd` is an explicit user-supplied escape hatch. It runs the provided command through the local shell for test-healing workflows, so only pass commands you trust.
+* There is no hidden shell lockdown mode; omit `--test-cmd` if you want model-driven sessions to avoid arbitrary shell execution.
 
 ---
 
