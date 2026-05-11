@@ -12,6 +12,7 @@
 - `src/budget.ts` — Session budget limiter (token cap, turn cap, progress bar)
 - `src/swd.ts` — SWD execution kernel (engine, types, parsing, snapshots — pure, no I/O)
 - `src/swd-cli.ts` — SWD terminal presentation layer (verification output, dry-run preview)
+- `src/receipts.ts` — SWD trust receipts (creation, storage, drift verification)
 - `src/memory.ts` — Self-healing MEMORY.md manager (SQLite FTS5 derivative index)
 - `src/metrics.ts` — Global metrics store (persistent budget tracking)
 - `src/diff.ts` — Myers' diff algorithm (zero-dependency, line-by-line)
@@ -21,6 +22,7 @@
 - `src/commands/chat.ts` — Interactive REPL (ChatSession orchestrator + ChatUI abstraction)
 - `src/commands/init.ts` — Project initialization (environment checks, provider detection, scaffolding)
 - `src/commands/verify.ts` — Codebase ↔ Memory drift scanner (dry-run aware)
+- `src/commands/receipts.ts` — SWD receipt list/show/verify command
 - `src/commands/dream.ts` — Memory compression (dry-run aware)
 - `src/commands/stats.ts` — Budget analytics reporter
 
@@ -62,6 +64,8 @@ npx tsx src/cli.ts dream
 npx tsx src/cli.ts dream --dry-run
 npx tsx src/cli.ts stats
 npx tsx src/cli.ts stats --days 7
+npx tsx src/cli.ts receipts
+npx tsx src/cli.ts receipts verify latest
 npx tsx src/cli.ts init
 npx tsx src/cli.ts init --force
 
@@ -70,5 +74,6 @@ npm run chat
 npm run verify
 npm run dream
 npm run stats
+npm run receipts
 npm run init
 ```
