@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.8.0] — 2026-05-15
+
+### Added
+- **CI Verification Mode** — Added `mythos verify --ci`, a read-only GitHub CI mode for reviewing PR/diff changes before merge
+- **Generic PR Review** — `verify --ci` now works even when no Mythos receipts are present, checking high-impact repository changes in generic PR-review mode.
+- **Receipt-Aware CI Checks** — When Mythos receipts are changed under `.mythos/receipts/`, CI verifies receipt integrity and changed-file coverage.
+- **Execution-Surface Detection** — Added CI checks for `package.json` script changes, npm lifecycle hooks, GitHub Actions workflows, shell/deploy/Docker surfaces, `.env`/`.npmrc` paths, private-key-like files, and high-confidence secret patterns.
+- **CI Output Options** — Added `--strict`, `--json`, and `--base <ref>` options for stricter CI policies, downstream tooling, and custom git base comparisons.
+- **CI Documentation** — Added `docs/CI.md` with GitHub Actions setup, exit behavior, examples, and maintainer notes.
+
+### Changed
+- **Verify Command Extension** — Extended `mythos verify` with a dedicated CI path while keeping normal local verification behavior unchanged.
+- **Test-Healing Loop Refactor** — Refactored the test-healing loop in `src/commands/chat.ts` into smaller helper methods for maintainability, without changing existing chat/SWD behavior.
+
+### Security
+- **No-AI CI Verification** — `verify --ci` does not call a model, use provider fallback, modify files, execute SWD actions, or write to `MEMORY.md`.
+- **Lifecycle Hook Review** — Newly added npm install lifecycle hooks such as `preinstall`, `install`, and `postinstall` are treated as high-severity CI findings.
+- **Execution-Surface Review** — Package scripts, workflows, shell/deploy files, and other high-impact repo surfaces are flagged for review before merge.
+- **Sensitive File Checks** — Added high-confidence checks for sensitive paths, private-key-like files, and secret-like material.
+
+---
+
 ## [1.7.1] — 2026-05-13
 
 ### Added
@@ -272,6 +294,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Correction Turns** — max 2 retries before yielding to human.
 - **Dream/Verify Commands** — memory compression and drift detection.
 
+[1.8.0]: https://github.com/thewaltero/mythos-router/releases/tag/v1.8.0
 [1.7.1]: https://github.com/thewaltero/mythos-router/releases/tag/v1.7.1
 [1.7.0]: https://github.com/thewaltero/mythos-router/releases/tag/v1.7.0
 [1.6.1]: https://github.com/thewaltero/mythos-router/releases/tag/v1.6.1
