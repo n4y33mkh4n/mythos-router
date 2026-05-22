@@ -58,6 +58,7 @@ export {
   readReceipt,
   verifyReceipt,
   verifyReceiptIntegrity,
+  verifyReceiptSignature,
   getReceiptsDir,
   type SWDReceipt,
   type SWDReceiptInput,
@@ -71,7 +72,22 @@ export {
   type ReceiptSnapshot,
   type ReceiptVerification,
   type ReceiptFileVerification,
+  type ReceiptSignature,
 } from './receipts.js';
+
+// Export Receipt Signing keys
+export {
+  generateKeyPair,
+  hasKeyPair,
+  loadKeyMetadata,
+  loadPublicKeyPem,
+  computeKeyId,
+  signData,
+  verifySignature,
+  getKeysDir,
+  type KeyMetadata,
+  type KeyPair,
+} from './crypto/keys.js';
 
 // Export the Budget Limiter
 export { SessionBudget, type BudgetConfig, type BudgetCheck, type BudgetSnapshot } from './budget.js';

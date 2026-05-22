@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -11,9 +11,11 @@ import {
   saveSWDReceipt,
   verifyReceipt,
   verifyReceiptIntegrity,
+  verifyReceiptSignature,
   sanitizeReceiptOutputTail,
   RECEIPT_OUTPUT_TAIL_MAX_CHARS,
 } from '../src/receipts.js';
+import { generateKeyPair, hasKeyPair, getKeysDir } from '../src/crypto/keys.js';
 import type { SWDRunResult } from '../src/swd.js';
 
 const originalCwd = process.cwd();
@@ -227,6 +229,191 @@ Authorization: Bearer ${'y'.repeat(40)}
     assert.match(tail, /\[REDACTED_SECRET\]/);
   });
 
+});
+
+describe('SWD receipts — Ed25519 signing', () => {
+  const originalHome = process.env.HOME;
+  const originalUserprofile = process.env.USERPROFILE;
+  let homeDir = '';
+  let workDir = '';
+
+  beforeEach(() => {
+    homeDir = mkdtempSync(join(tmpdir(), 'mythos-signing-home-'));
+    workDir = mkdtempSync(join(tmpdir(), 'mythos-signing-work-'));
+    process.env.HOME = homeDir;
+    process.env.USERPROFILE = homeDir;
+    process.chdir(workDir);
+  });
+
+  afterEach(() => {
+    process.chdir(originalCwd);
+    if (originalHome === undefined) delete process.env.HOME; else process.env.HOME = originalHome;
+    if (originalUserprofile === undefined) delete process.env.USERPROFILE; else process.env.USERPROFILE = originalUserprofile;
+    rmSync(homeDir, { recursive: true, force: true });
+    rmSync(workDir, { recursive: true, force: true });
+  });
+
+  function buildRunResult(filePath: string, content: string): SWDRunResult {
+    const absPath = join(workDir, filePath);
+    writeFileSync(absPath, content, 'utf-8');
+    return {
+      success: true,
+      rolledBack: false,
+      rollbackErrors: [],
+      errors: [],
+      results: [
+        {
+          action: {
+            path: filePath,
+            operation: 'MODIFY',
+            intent: 'MUTATE',
+            description: 'Test write',
+          },
+          status: 'verified',
+          detail: `Verified: MODIFY ${filePath}`,
+          before: { path: absPath, exists: true, size: 0, mtime: 1, hash: sha256('') },
+          after: { path: absPath, exists: true, size: content.length, mtime: 2, hash: sha256(content) },
+        },
+      ],
+    };
+  }
+
+  it('produces unsigned receipts when no key exists', () => {
+    assert.equal(hasKeyPair(), false);
+    const receipt = createSWDReceipt({
+      request: 'unsigned-test',
+      summary: 'MODIFY: sample.txt',
+      result: buildRunResult('sample.txt', 'after'),
+    });
+    saveSWDReceipt(receipt);
+    const persisted = readReceipt(receipt.id);
+    assert.ok(persisted, 'receipt should round-trip from disk');
+    assert.equal(persisted!.signature, undefined);
+
+    const v = verifyReceipt(persisted!);
+    assert.equal(v.signed, false);
+    assert.equal(v.signatureOk, null);
+    assert.equal(v.ok, true);
+    assert.equal(verifyReceiptSignature(persisted!), null);
+  });
+
+  it('signs new receipts when a local key exists, and verifies them', () => {
+    const kp = generateKeyPair();
+    assert.ok(kp.keyId.startsWith('sha256:'));
+    assert.ok(kp.privateKeyPath.startsWith(getKeysDir()));
+
+    const receipt = createSWDReceipt({
+      request: 'signed-test',
+      summary: 'MODIFY: signed.txt',
+      result: buildRunResult('signed.txt', 'signed-after'),
+    });
+    saveSWDReceipt(receipt);
+    const persisted = readReceipt(receipt.id);
+    assert.ok(persisted, 'receipt should round-trip from disk');
+    assert.ok(persisted!.signature, 'signed receipt should embed a signature block');
+    assert.equal(persisted!.signature!.algorithm, 'ed25519');
+    assert.equal(persisted!.signature!.keyId, kp.keyId);
+    assert.ok(persisted!.signature!.publicKey.includes('BEGIN PUBLIC KEY'));
+
+    const v = verifyReceipt(persisted!);
+    assert.equal(v.signed, true);
+    assert.equal(v.signatureOk, true);
+    assert.equal(v.signerKeyId, kp.keyId);
+    assert.equal(v.ok, true);
+    assert.equal(verifyReceiptSignature(persisted!), true);
+  });
+
+  it('detects integrity tampering on a signed receipt', () => {
+    generateKeyPair();
+    const receipt = createSWDReceipt({
+      request: 'tamper-test',
+      summary: 'MODIFY: tamper.txt',
+      result: buildRunResult('tamper.txt', 'original'),
+    });
+    saveSWDReceipt(receipt);
+
+    // Tamper: edit the receipt JSON to claim a different request.
+    const receiptPath = join(workDir, '.mythos', 'receipts', `${receipt.id}.json`);
+    const parsed = JSON.parse(readFileSync(receiptPath, 'utf-8'));
+    parsed.request = 'malicious-rewrite';
+    writeFileSync(receiptPath, JSON.stringify(parsed, null, 2) + '\n', 'utf-8');
+
+    const tampered = readReceipt(receipt.id);
+    assert.ok(tampered);
+    assert.equal(verifyReceiptIntegrity(tampered!), false);
+
+    // The signature was over the *original* integrity hash, so an attacker
+    // that also re-hashes the payload still can't produce a matching signature.
+    parsed.integrity = { sha256: createHash('sha256').update(JSON.stringify({
+      ...parsed,
+      integrity: undefined,
+      signature: undefined,
+    })).digest('hex') };
+    writeFileSync(receiptPath, JSON.stringify(parsed, null, 2) + '\n', 'utf-8');
+
+    const reTampered = readReceipt(receipt.id);
+    assert.ok(reTampered);
+    // Integrity hash now matches the tampered body but signature was over the original.
+    assert.equal(verifyReceiptIntegrity(reTampered!), true);
+    assert.equal(verifyReceiptSignature(reTampered!), false);
+    assert.equal(verifyReceipt(reTampered!).signatureOk, false);
+  });
+
+  it('detects signature tampering', () => {
+    generateKeyPair();
+    const receipt = createSWDReceipt({
+      request: 'sig-tamper',
+      summary: 'MODIFY: sig.txt',
+      result: buildRunResult('sig.txt', 'whatever'),
+    });
+    saveSWDReceipt(receipt);
+
+    const receiptPath = join(workDir, '.mythos', 'receipts', `${receipt.id}.json`);
+    const parsed = JSON.parse(readFileSync(receiptPath, 'utf-8'));
+    // Flip a base64 char near the middle of the signature. Avoid the
+    // trailing characters because those may be padding (`==`) on
+    // Ed25519's 64-byte signature, where a flip is a no-op after decode.
+    const sig = parsed.signature.signature as string;
+    const mid = Math.floor(sig.length / 2);
+    const flipped = sig.slice(0, mid) + (sig[mid] === 'A' ? 'B' : 'A') + sig.slice(mid + 1);
+    parsed.signature.signature = flipped;
+    writeFileSync(receiptPath, JSON.stringify(parsed, null, 2) + '\n', 'utf-8');
+
+    const persisted = readReceipt(receipt.id);
+    assert.ok(persisted);
+    assert.equal(verifyReceiptSignature(persisted!), false);
+    assert.equal(verifyReceipt(persisted!).ok, false);
+  });
+
+  it('refuses to overwrite an existing key without force', () => {
+    generateKeyPair();
+    assert.throws(() => generateKeyPair(), /already exists/);
+    // force=true succeeds.
+    const replaced = generateKeyPair(true);
+    assert.ok(replaced.keyId);
+  });
+
+  it('lists unsigned receipts alongside signed ones without errors', () => {
+    // First: unsigned receipt.
+    const r1 = createSWDReceipt({
+      request: 'r1',
+      summary: 'MODIFY: a.txt',
+      result: buildRunResult('a.txt', 'one'),
+    });
+    saveSWDReceipt(r1);
+
+    // Then keygen and a signed receipt.
+    generateKeyPair();
+    const r2 = createSWDReceipt({
+      request: 'r2',
+      summary: 'MODIFY: b.txt',
+      result: buildRunResult('b.txt', 'two'),
+    });
+    saveSWDReceipt(r2);
+
+    const all = listReceipts(10);
+    assert.equal(all.length, 2);
+  });
 });
 
 function sha256(text: string): string {

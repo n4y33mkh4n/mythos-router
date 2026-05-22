@@ -10,6 +10,13 @@ import {
 } from 'node:fs';
 import * as path from 'node:path';
 import type { SWDRunResult } from './swd.js';
+import {
+  hasKeyPair,
+  loadKeyMetadata,
+  loadPublicKeyPem,
+  signData,
+  verifySignature,
+} from './crypto/keys.js';
 
 export const RECEIPTS_DIR = '.mythos/receipts';
 
@@ -104,9 +111,20 @@ export interface ReceiptFileVerification {
   actual?: ReceiptSnapshot;
 }
 
+export interface ReceiptSignature {
+  algorithm: 'ed25519';
+  keyId: string;
+  publicKey: string; // PEM-encoded SPKI
+  signature: string; // base64
+  signedAt: string;  // ISO-8601 UTC
+}
+
 export interface ReceiptVerification {
   ok: boolean;
   files: ReceiptFileVerification[];
+  signed: boolean;
+  signatureOk: boolean | null; // null when receipt is unsigned
+  signerKeyId?: string;
 }
 
 export interface ReceiptSummary {
@@ -160,6 +178,7 @@ export interface SWDReceipt {
   integrity?: {
     sha256: string;
   };
+  signature?: ReceiptSignature;
 }
 
 type SnapshotLike = {
@@ -272,8 +291,11 @@ function normalizeFileResult(rootDir: string, result: SWDRunResult['results'][nu
   return file;
 }
 
-function receiptPayload(receipt: SWDReceipt): Omit<SWDReceipt, 'integrity'> {
-  const { integrity: _integrity, ...payload } = receipt;
+function receiptPayload(receipt: SWDReceipt): Omit<SWDReceipt, 'integrity' | 'signature'> {
+  // The signature attests to the integrity hash, not to itself. Strip both
+  // before hashing so the same bytes always produce the same hash regardless
+  // of whether the receipt was signed.
+  const { integrity: _integrity, signature: _signature, ...payload } = receipt;
   return payload;
 }
 
@@ -281,7 +303,7 @@ function integrityHash(receipt: SWDReceipt): string {
   return sha256(JSON.stringify(receiptPayload(receipt)));
 }
 
-function withIntegrity(receipt: Omit<SWDReceipt, 'integrity'>): SWDReceipt {
+function withIntegrity(receipt: Omit<SWDReceipt, 'integrity' | 'signature'>): SWDReceipt {
   const integrity = { sha256: '' };
   const next: SWDReceipt = {
     ...receipt,
@@ -289,6 +311,33 @@ function withIntegrity(receipt: Omit<SWDReceipt, 'integrity'>): SWDReceipt {
   };
   integrity.sha256 = integrityHash(next);
   return next;
+}
+
+/**
+ * Sign the integrity hash with the local Ed25519 key, if one exists.
+ * No-op when the user hasn't run `mythos receipts keygen` — signing is
+ * opt-in to preserve the zero-config experience.
+ */
+function signReceipt(receipt: SWDReceipt): SWDReceipt {
+  if (!hasKeyPair()) return receipt;
+  const metadata = loadKeyMetadata();
+  const publicKeyPem = loadPublicKeyPem();
+  const integrity = receipt.integrity?.sha256;
+  if (!metadata || !publicKeyPem || !integrity) return receipt;
+
+  const signature = signData(integrity);
+  if (!signature) return receipt;
+
+  return {
+    ...receipt,
+    signature: {
+      algorithm: 'ed25519',
+      keyId: metadata.keyId,
+      publicKey: publicKeyPem,
+      signature,
+      signedAt: new Date().toISOString(),
+    },
+  };
 }
 
 function createReceiptId(timestamp: string, request: string, files: ReceiptFileResult[]): string {
@@ -338,7 +387,7 @@ export function createSWDReceipt(input: SWDReceiptInput): SWDReceipt {
   if (input.git) base.git = input.git;
   if (input.test) base.test = input.test;
 
-  return withIntegrity(base);
+  return signReceipt(withIntegrity(base));
 }
 
 export function saveSWDReceipt(receipt: SWDReceipt, overwrite = true): string {
@@ -349,10 +398,12 @@ export function saveSWDReceipt(receipt: SWDReceipt, overwrite = true): string {
     return filePath;
   }
 
-  const normalized = withIntegrity({
+  // Path normalization may shift file paths, which would invalidate the
+  // signature. Re-hash and re-sign the canonicalized payload.
+  const normalized = signReceipt(withIntegrity({
     ...receiptPayload(receipt),
     files: receipt.files.map((file) => normalizeStoredFile(getCurrentRoot(), file)),
-  });
+  }));
   writeFileSync(filePath, `${JSON.stringify(normalized, null, 2)}\n`, 'utf-8');
   return filePath;
 }
@@ -506,14 +557,35 @@ export function verifyReceipt(receipt: SWDReceipt): ReceiptVerification {
     };
   });
 
+  const sig = receipt.signature;
+  let signatureOk: boolean | null = null;
+  if (sig) {
+    const integrity = receipt.integrity?.sha256;
+    signatureOk = !!integrity && verifySignature(integrity, sig.signature, sig.publicKey);
+  }
+
   return {
-    ok: files.every((file) => file.status === 'ok'),
+    ok: files.every((file) => file.status === 'ok') && signatureOk !== false,
     files,
+    signed: !!sig,
+    signatureOk,
+    signerKeyId: sig?.keyId,
   };
 }
 
 export function verifyReceiptIntegrity(receipt: SWDReceipt): boolean {
   return receipt.integrity?.sha256 === integrityHash(receipt);
+}
+
+/**
+ * Check the embedded signature against the embedded public key.
+ * Returns null when the receipt is unsigned.
+ */
+export function verifyReceiptSignature(receipt: SWDReceipt): boolean | null {
+  if (!receipt.signature) return null;
+  const integrity = receipt.integrity?.sha256;
+  if (!integrity) return false;
+  return verifySignature(integrity, receipt.signature.signature, receipt.signature.publicKey);
 }
 
 export const createReceipt = createSWDReceipt;
