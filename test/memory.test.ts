@@ -15,13 +15,17 @@ import {
   getDbPath,
   searchMemory,
 } from '../src/memory.js';
+import { hasNodeSqlite } from './_helpers/sqlite.js';
 
 
 const memoryPath = getMemoryPath();
 const dbPath = getDbPath();
 let backup: string | null = null;
 
-describe('Memory System', () => {
+// SQLite-backed memory index requires node:sqlite (Node 22.5+).
+// On older runtimes the CLI degrades gracefully; we don't assert
+// index behavior there.
+describe('Memory System', { skip: !hasNodeSqlite() && 'node:sqlite unavailable (Node <22.5)' }, () => {
   beforeEach(() => {
     // Authority Setup
     if (existsSync(memoryPath)) {

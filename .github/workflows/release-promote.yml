@@ -1,0 +1,67 @@
+name: Release Promote
+
+# ─────────────────────────────────────────────────────────────
+# Promotes a previously-published version from `next` (or any
+# other dist-tag) to `latest` on the npm registry. Strictly
+# manual to avoid accidental promotions.
+#
+# Usage:
+#   GitHub UI → Actions → Release Promote → Run workflow
+#     • version: 1.9.0
+#     • from:    next         (the dist-tag the version lives under)
+#     • to:      latest       (where to point it)
+#
+# Required secrets:
+#   • NPM_TOKEN  — automation token from npmjs.com
+# ─────────────────────────────────────────────────────────────
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to promote (e.g. 1.9.0). Must already be published.'
+        required: true
+        type: string
+      from:
+        description: 'Source dist-tag (informational only — no untag happens)'
+        required: true
+        default: 'next'
+        type: choice
+        options:
+          - next
+          - beta
+      to:
+        description: 'Target dist-tag'
+        required: true
+        default: 'latest'
+        type: choice
+        options:
+          - latest
+          - next
+          - beta
+
+permissions:
+  contents: read
+
+jobs:
+  promote:
+    name: Promote ${{ inputs.from }} → ${{ inputs.to }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+      - name: Confirm the version exists on the registry
+        run: |
+          set -euo pipefail
+          if ! npm view "mythos-router@${{ inputs.version }}" version >/dev/null 2>&1; then
+            echo "::error::mythos-router@${{ inputs.version }} is not published on npm."
+            exit 1
+          fi
+      - name: Add ${{ inputs.to }} dist-tag
+        run: npm dist-tag add "mythos-router@${{ inputs.version }}" "${{ inputs.to }}"
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Show current dist-tags
+        run: npm dist-tag ls mythos-router
