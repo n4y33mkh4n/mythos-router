@@ -1,0 +1,131 @@
+name: Pricing Freshness Check
+
+# ─────────────────────────────────────────────────────────────
+# Weekly drift detection for the prices encoded in
+# src/providers/pricing.ts. The check is read-only — it does
+# not commit code or auto-update the registry. When drift is
+# detected it opens (or comments on) a single GitHub issue
+# labeled `pricing-drift` so the maintainer can decide.
+#
+# Manually re-runnable via the Actions tab → Run workflow.
+# ─────────────────────────────────────────────────────────────
+
+on:
+  schedule:
+    # Mondays 13:00 UTC. Off-peak relative to most release cadences.
+    - cron: '0 13 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Verify pricing against upstream docs
+    runs-on: ubuntu-latest
+    # The issue-opening step needs write on issues. Scope it narrowly
+    # so the rest of the job stays read-only.
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # daysSinceLastUpdate() reads git log on the pricing file.
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - run: npm ci
+
+      - name: Run pricing check
+        id: check
+        run: |
+          set +e
+          npx tsx scripts/check-pricing.ts --json > pricing-report.json
+          echo "exit=$?" >> "$GITHUB_OUTPUT"
+
+      - name: Print report
+        run: |
+          cat pricing-report.json
+          # Surface findings as GitHub annotations regardless of severity
+          node -e "
+            const r = require('./pricing-report.json');
+            for (const f of r.findings) {
+              const level = f.severity === 'fail' ? 'error' : 'warning';
+              process.stdout.write('::' + level + '::' + f.message + '\n');
+            }
+          "
+
+      - name: Open or update drift issue on hard failure
+        if: steps.check.outputs.exit != '0'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('node:fs');
+            const report = JSON.parse(fs.readFileSync('pricing-report.json', 'utf-8'));
+            const failures = report.findings.filter(f => f.severity === 'fail');
+            if (failures.length === 0) {
+              core.info('Script exited non-zero but no fail-severity findings; skipping issue.');
+              return;
+            }
+            const title = 'Pricing drift detected against Anthropic docs';
+            const bullets = failures.map(f => `- ${f.message}`).join('\n');
+            const warnBullets = report.findings
+              .filter(f => f.severity === 'warn')
+              .map(f => `- ${f.message}`)
+              .join('\n');
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const body = [
+              `The scheduled pricing freshness check detected drift between`,
+              `\`src/providers/pricing.ts\` and ${report.url}.`,
+              '',
+              '## Failures',
+              bullets,
+              warnBullets ? '\n## Warnings\n' + warnBullets : '',
+              '',
+              '## Next steps',
+              `1. Open ${report.url} and confirm the values.`,
+              '2. Update \`src/providers/pricing.ts\` (and \`COST_PER_INPUT_TOKEN\` / \`COST_PER_OUTPUT_TOKEN\` in \`src/config.ts\` if Opus is affected).',
+              '3. Run \`npm run pricing:check\` locally to confirm.',
+              '4. Close this issue.',
+              '',
+              `[Workflow run](${runUrl})`,
+            ].join('\n');
+
+            const existing = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'pricing-drift',
+            });
+            const found = existing.data.find(i => i.title === title);
+            if (found) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: found.number,
+                body,
+              });
+              core.notice(`Commented on existing drift issue #${found.number}`);
+            } else {
+              const created = await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                body,
+                labels: ['pricing-drift'],
+              });
+              core.notice(`Opened drift issue #${created.data.number}`);
+            }
+
+      - name: Fail the job if any hard failures
+        if: steps.check.outputs.exit != '0'
+        run: |
+          # Distinguish: script exit 1 = drift (fail the job for visibility),
+          # script exit 2 = crash (also fail).
+          echo "Pricing check exited with code ${{ steps.check.outputs.exit }}"
+          exit 1

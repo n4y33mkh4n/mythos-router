@@ -19,12 +19,15 @@ interface ModelPricing {
 
 const PRICING_TABLE: Record<string, ModelPricing> = {
   // ── Anthropic ────────────────────────────────────────────
+  // Verified against https://docs.anthropic.com/en/docs/about-claude/pricing
+  // via scripts/check-pricing.ts. Retired models (claude-sonnet-3-5,
+  // claude-haiku-3) are no longer listed on Anthropic's pricing page —
+  // requests against them now fall back to FALLBACK_PRICING with a
+  // conservative estimate.
   'claude-opus-4-7':      { inputPer1M: 5.00,   outputPer1M: 25.00 },
   'claude-opus-4-6':      { inputPer1M: 5.00,   outputPer1M: 25.00 },
   'claude-sonnet-4-6':    { inputPer1M: 3.00,   outputPer1M: 15.00 },
-  'claude-sonnet-3-5':    { inputPer1M: 3.00,   outputPer1M: 15.00 },
   'claude-haiku-4-5-20251001': { inputPer1M: 1.00,   outputPer1M: 5.00 },
-  'claude-haiku-3':       { inputPer1M: 0.25,   outputPer1M: 1.25 },
 
   // ── OpenAI ───────────────────────────────────────────────
   'gpt-4o':               { inputPer1M: 2.50,   outputPer1M: 10.00 },
