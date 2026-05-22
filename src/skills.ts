@@ -41,6 +41,12 @@ export interface SkillValidation {
 const SKILLS_DIR = path.join(os.homedir(), '.mythos-router', 'skills');
 const SKILL_FILE = 'SKILL.md';
 
+// Skill names are user-supplied via the -s/--skill CLI flag and resolve to
+// paths under SKILLS_DIR. Restricting the character set blocks path-traversal
+// vectors (../, absolute paths, embedded separators) before they reach the
+// filesystem.
+const SKILL_NAME_RE = /^[A-Za-z0-9_-]{1,64}$/;
+
 // ── YAML Frontmatter Parser (minimal, zero-dep) ─────────────
 // Handles: strings, numbers, booleans, and simple arrays (- item)
 function parseFrontmatter(content: string): { meta: Record<string, unknown>; body: string } {
@@ -115,19 +121,20 @@ function parseYamlValue(raw: string): string | number | boolean {
 }
 
 // ── Skill Loader ─────────────────────────────────────────────
-export function loadSkill(nameOrPath: string): Skill {
-  let skillPath: string;
-
-  // Check if it's a direct path or a skill name
-  if (nameOrPath.includes(path.sep) || nameOrPath.includes('/')) {
-    skillPath = path.resolve(nameOrPath);
-  } else {
-    skillPath = path.join(SKILLS_DIR, nameOrPath, SKILL_FILE);
+export function loadSkill(name: string): Skill {
+  if (!SKILL_NAME_RE.test(name)) {
+    throw new Error(
+      `Invalid skill name: ${JSON.stringify(name)}\n` +
+      `  Skill names must match ${SKILL_NAME_RE} (letters, digits, "_", "-", 1-64 chars).\n` +
+      `  To use a custom skill, place it at: ${path.join(SKILLS_DIR, '<name>', SKILL_FILE)}`
+    );
   }
+
+  const skillPath = path.join(SKILLS_DIR, name, SKILL_FILE);
 
   if (!fs.existsSync(skillPath)) {
     throw new Error(
-      `Skill not found: ${nameOrPath}\n` +
+      `Skill not found: ${name}\n` +
       `  Expected at: ${skillPath}\n` +
       `  Create it:   mkdir -p ${path.dirname(skillPath)} && touch ${skillPath}`
     );
@@ -136,9 +143,19 @@ export function loadSkill(nameOrPath: string): Skill {
   const content = fs.readFileSync(skillPath, 'utf-8');
   const { meta, body } = parseFrontmatter(content);
 
+  // A file without YAML frontmatter isn't a skill — reject so that
+  // arbitrary text files placed under SKILLS_DIR can't be loaded as
+  // skill instructions.
+  if (!content.startsWith('---')) {
+    throw new Error(
+      `Skill ${name} at ${skillPath} is missing YAML frontmatter. ` +
+      `A valid SKILL.md begins with a "---" fenced metadata block.`
+    );
+  }
+
   const skill: Skill = {
     meta: {
-      name: String(meta.name ?? nameOrPath),
+      name: String(meta.name ?? name),
       version: String(meta.version ?? '0.0.0'),
       description: String(meta.description ?? ''),
       priority: Number(meta.priority ?? 50),

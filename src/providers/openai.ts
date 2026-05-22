@@ -121,6 +121,12 @@ export class OpenAIProvider implements BaseProvider {
       ],
       max_tokens: options.maxTokens ?? 16384,
       stream: true,
+      // Request real usage data in the terminal SSE chunk. Without this,
+      // OpenAI / DeepSeek omit the usage object during streaming and we
+      // fall back to a chars/4 estimate — which compounds in budgets,
+      // receipts, and the stats dashboard. Providers that don't support
+      // the option ignore it, so the estimate remains as a safety net.
+      stream_options: { include_usage: true },
     };
 
     const response = await fetch(`${this.baseUrl}/chat/completions`, {
