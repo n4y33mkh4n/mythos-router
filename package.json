@@ -21,7 +21,7 @@
   "scripts": {
     "dev": "tsx src/cli.ts",
     "build": "tsc",
-    "test": "node --import tsx --test \"test/**/*.test.ts\"",
+    "test": "node scripts/run-tests.mjs",
     "prepublishOnly": "npm run build",
     "start": "node dist/cli.js",
     "chat": "tsx src/cli.ts chat",
