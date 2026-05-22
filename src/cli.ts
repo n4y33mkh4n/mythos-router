@@ -26,6 +26,7 @@ import { statsCommand } from './commands/stats.js';
 import { providersCommand } from './commands/providers.js';
 import { initCommand } from './commands/init.js';
 import { receiptsCommand } from './commands/receipts.js';
+import { doctorCommand } from './commands/doctor.js';
 import {
   DEFAULT_MAX_TOKENS_PER_SESSION,
   DEFAULT_MAX_TURNS,
@@ -185,6 +186,13 @@ program
   .description('Initialize mythos-router in the current project')
   .option('-f, --force', 'Re-scaffold files even if they already exist')
   .action(initCommand);
+
+// ── mythos doctor ────────────────────────────────────────────
+program
+  .command('doctor')
+  .description('Run health checks: environment, providers, project state, subsystems')
+  .option('--json', 'Print machine-readable JSON')
+  .action(doctorCommand);
 
 // ── Default: show help ───────────────────────────────────────
 if (process.argv.length <= 2) {

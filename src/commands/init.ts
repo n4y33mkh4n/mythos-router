@@ -12,6 +12,7 @@ import { c, BANNER, hr, heading, success, warn, error as logError } from '../uti
 import { DEFAULT_IGNORE_PATTERNS, MYTHOSIGNORE_FILE, detectProviders } from '../config.js';
 import { initMemory, getMemoryPath } from '../memory.js';
 import { ensureSkillsDir, getSkillsDir, listSkills } from '../skills.js';
+import { hasNodeSqlite } from './doctor.js';
 
 // ── Constants ────────────────────────────────────────────────
 const MIN_NODE_MAJOR = 20;
@@ -41,20 +42,10 @@ function checkEnvironment(): EnvCheck[] {
   });
 
   // 2. SQLite availability (for FTS5 memory index)
-  let sqliteOk = false;
-  try {
-    // node:sqlite is available from Node 22.5+
-    require('node:sqlite');
-    sqliteOk = true;
-  } catch {
-    try {
-      // Dynamic import check for ESM
-      // We just check if the module resolves without actually importing
-      sqliteOk = major > 22 || (major === 22 && minor >= 5);
-    } catch {
-      sqliteOk = false;
-    }
-  }
+  // node:sqlite ships natively in Node 22.5+. Detected at runtime so that
+  // bundled or polyfilled environments are picked up correctly.
+  void minor; // node version detail is preserved for the version display below
+  const sqliteOk = hasNodeSqlite();
   checks.push({
     label: 'SQLite (node:sqlite)',
     ok: sqliteOk,

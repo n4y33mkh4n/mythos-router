@@ -143,6 +143,15 @@ mythos init                  # Initialize mythos-router in the current project
 mythos init --force          # Re-scaffold files even if they already exist
 ```
 
+### `mythos doctor` — Health Check
+
+```bash
+mythos doctor                # Inspect environment, providers, project state, subsystems
+mythos doctor --json         # Machine-readable output (exit 1 on critical failures)
+```
+
+A re-runnable counterpart to `init`. Where `init` scaffolds files once, `doctor` diagnoses the current installation any time — useful in CI, after onboarding a new contributor, or when something feels off.
+
 ### `mythos chat` — Interactive Session
 
 ```bash
