@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.10.0] — 2026-05-22
+
+### Added
+- **Ed25519 receipt signing** — Receipts now carry an optional `signature` block (algorithm, keyId, embedded public key, base64 signature, signedAt). When a local key exists, every new SWD receipt is signed automatically. Verification is built into `mythos receipts verify` and into the SDK via `verifyReceiptSignature()`.
+- **`mythos receipts keygen`** — One-time keypair generation. Keys live at `~/.mythos-router/keys/ed25519.{priv,pub}` with `0600`/`0644` permissions. `--force` overwrites (invalidates prior signatures).
+- **`mythos receipts pubkey`** — Prints the local public key for sharing with auditors. Supports `--json`.
+- **`docs/RECEIPTS.md`** — Verification protocol for third-party auditors (integrity + signature + file-state checks) with code samples that don't require the `mythos` CLI.
+- **SDK exports** — `generateKeyPair`, `hasKeyPair`, `loadKeyMetadata`, `loadPublicKeyPem`, `signData`, `verifySignature`, `verifyReceiptSignature`, and corresponding types are now available from the package main.
+- **`receipts:keygen` / `receipts:pubkey` npm scripts** — Local convenience wrappers.
+
+### Changed
+- **`ReceiptVerification`** now includes `signed`, `signatureOk`, and `signerKeyId` fields. Unsigned receipts continue to verify (`signed:false`, `signatureOk:null`); signed receipts must satisfy both integrity and signature checks for `ok:true`.
+- **`mythos receipts verify`** output reports signing status alongside integrity and per-file drift.
+
+### Security
+- Receipts move from tamper-evident (integrity hash only) to tamper-resistant (Ed25519 signature). A signed receipt's content cannot be modified without invalidating the signature, even if the integrity hash is also re-computed.
+
+### Tests
+- Added six signing-related tests: unsigned round-trip, signed round-trip, integrity tampering on signed receipts, signature tampering, refusal-without-force on overwrite, and mixed signed/unsigned listing.
+
+---
+
 ## [1.9.0] — 2026-05-22
 
 ### Added
