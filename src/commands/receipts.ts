@@ -6,11 +6,21 @@ import {
   type ReceiptSummary,
   type SWDReceipt,
 } from '../receipts.js';
+import {
+  generateKeyPair,
+  hasKeyPair,
+  loadKeyMetadata,
+  loadPublicKeyPem,
+  getKeysDir,
+  getPrivateKeyPath,
+  getPublicKeyPath,
+} from '../crypto/keys.js';
 import { c, error, heading, hr, info, success, theme, warn } from '../utils.js';
 
 interface ReceiptsOptions {
   limit?: string;
   json?: boolean;
+  force?: boolean;
 }
 
 export async function receiptsCommand(
@@ -40,8 +50,99 @@ export async function receiptsCommand(
     return;
   }
 
+  if (normalizedAction === 'keygen') {
+    runKeygen(options.force === true, options.json);
+    return;
+  }
+
+  if (normalizedAction === 'pubkey') {
+    printPublicKey(options.json);
+    return;
+  }
+
   warn(`Unknown receipts action: ${normalizedAction}`);
-  info('Usage: mythos receipts | mythos receipts show latest | mythos receipts verify latest');
+  info('Usage: mythos receipts | mythos receipts show latest | mythos receipts verify latest | mythos receipts keygen | mythos receipts pubkey');
+}
+
+function runKeygen(force: boolean, asJson?: boolean): void {
+  if (hasKeyPair() && !force) {
+    const msg =
+      `A signing key already exists at ${getPrivateKeyPath()}. ` +
+      `Pass --force to overwrite (this invalidates all prior signatures).`;
+    if (asJson) {
+      console.log(JSON.stringify({ ok: false, reason: 'exists', path: getPrivateKeyPath() }, null, 2));
+      process.exitCode = 1;
+      return;
+    }
+    error(msg);
+    process.exitCode = 1;
+    return;
+  }
+
+  try {
+    const kp = generateKeyPair(force);
+    if (asJson) {
+      console.log(JSON.stringify({
+        ok: true,
+        keyId: kp.keyId,
+        publicKeyPath: kp.publicKeyPath,
+        privateKeyPath: kp.privateKeyPath,
+        created: kp.created,
+      }, null, 2));
+      return;
+    }
+    console.log(heading('Signing Keypair Generated'));
+    success(`keyId:      ${c.bold}${kp.keyId}${c.reset}`);
+    console.log(`  ${c.dim}Private:   ${kp.privateKeyPath} (mode 0600)${c.reset}`);
+    console.log(`  ${c.dim}Public:    ${kp.publicKeyPath}${c.reset}`);
+    console.log(`  ${c.dim}Created:   ${kp.created}${c.reset}`);
+    console.log();
+    info('All future SWD receipts on this machine will be signed automatically.');
+    info(`Share your public key with auditors via: ${c.cyan}mythos receipts pubkey${c.reset}`);
+    warn('Treat the private key like an SSH key. Never commit or share it.');
+  } catch (err: any) {
+    error(`Keygen failed: ${err.message}`);
+    process.exitCode = 1;
+  }
+}
+
+function printPublicKey(asJson?: boolean): void {
+  if (!hasKeyPair()) {
+    const msg = 'No signing key found. Run `mythos receipts keygen` to create one.';
+    if (asJson) {
+      console.log(JSON.stringify({ ok: false, reason: 'no-key' }, null, 2));
+      process.exitCode = 1;
+      return;
+    }
+    warn(msg);
+    process.exitCode = 1;
+    return;
+  }
+  const pem = loadPublicKeyPem();
+  const meta = loadKeyMetadata();
+  if (!pem || !meta) {
+    error(`Could not read key material from ${getKeysDir()}`);
+    process.exitCode = 1;
+    return;
+  }
+  if (asJson) {
+    console.log(JSON.stringify({
+      ok: true,
+      keyId: meta.keyId,
+      algorithm: meta.algorithm,
+      created: meta.created,
+      publicKey: pem,
+      publicKeyPath: getPublicKeyPath(),
+    }, null, 2));
+    return;
+  }
+  console.log(heading('Mythos Signing Public Key'));
+  console.log(`  ${c.dim}keyId:${c.reset}     ${c.bold}${meta.keyId}${c.reset}`);
+  console.log(`  ${c.dim}algorithm:${c.reset} ${meta.algorithm}`);
+  console.log(`  ${c.dim}created:${c.reset}   ${meta.created}`);
+  console.log(`  ${c.dim}path:${c.reset}      ${getPublicKeyPath()}`);
+  console.log();
+  console.log(pem.trim());
 }
 
 function printReceiptList(limit: number, asJson?: boolean): void {
@@ -123,6 +224,16 @@ function printReceiptVerification(target: string, asJson?: boolean): void {
     warn('Receipt integrity hash does not match. The receipt file may have been edited.');
   }
 
+  if (verification.signed) {
+    if (verification.signatureOk) {
+      success(`Signature OK (${verification.signerKeyId}).`);
+    } else {
+      error(`Signature INVALID (${verification.signerKeyId ?? 'unknown key'}).`);
+    }
+  } else {
+    info('Receipt is unsigned. Run `mythos receipts keygen` to enable signing on future receipts.');
+  }
+
   for (const file of verification.files) {
     if (file.status === 'ok') {
       success(`${file.path} - ${file.detail}`);
@@ -134,10 +245,11 @@ function printReceiptVerification(target: string, asJson?: boolean): void {
   }
 
   console.log();
+  const sigPart = verification.signed && verification.signatureOk === false ? ' or invalid signature' : '';
   if (verification.ok && integrityOk) {
     success('Receipt verification passed.');
   } else {
-    warn('Receipt verification found drift or integrity issues.');
+    warn(`Receipt verification found drift, integrity${sigPart} issues.`);
   }
 }
 

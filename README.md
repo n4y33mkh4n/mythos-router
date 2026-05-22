@@ -218,11 +218,20 @@ In-session commands:
 ```bash
 mythos receipts              # List recent SWD receipts
 mythos receipts show latest  # Inspect the newest receipt
-mythos receipts verify latest  # Re-check current files against receipt hashes
+mythos receipts verify latest  # Re-check current files against receipt hashes + signature
 mythos receipts --json       # Machine-readable output for tooling
+mythos receipts keygen       # Generate a local Ed25519 signing key (one-time)
+mythos receipts pubkey       # Print the public key for sharing with auditors
+mythos receipts keygen --force  # Replace an existing key (invalidates prior signatures)
 ```
 
 Every non-dry-run SWD file operation writes a local receipt to `.mythos/receipts/`. Receipts include the user request summary, provider/model, token usage, budget snapshot, git branch/commit, per-file before/after hashes, rollback status, and optional `--test-cmd` result. `verify` turns those receipts into a quick drift check for "did the files still match what SWD verified?" Receipts are local by default and gitignored by default. They may include prompts, file paths, provider metadata, test command names, and a short test output tail. Do not publish raw receipts from private repositories; force-add only when you intentionally want a shared audit trail.
+
+#### Ed25519 Receipt Signing (Optional)
+
+Run `mythos receipts keygen` once to enable cryptographic signing. After that, every SWD receipt produced on this machine carries an Ed25519 signature over its integrity hash plus the embedded public key, making receipts tamper-resistant rather than merely tamper-evident. Anyone with the receipt and your public key can verify it independently — see [`docs/RECEIPTS.md`](./docs/RECEIPTS.md) for the third-party verification protocol.
+
+Keys are stored at `~/.mythos-router/keys/` (mode `0600` on the private key). Treat the private key like an SSH key — never commit or share it. Sharing your public key (`mythos receipts pubkey`) is safe and intended.
 
 ### `mythos verify` — Local Memory Scan + CI Verification
 

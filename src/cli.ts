@@ -170,14 +170,15 @@ program
   .option('--verbose', 'Show full error stacks for recent failures')
   .action(providersCommand);
 
-// SWD receipt inspection and drift verification
+// SWD receipt inspection, verification, and signing-key management
 program
   .command('receipts')
-  .description('List, inspect, and verify SWD trust receipts')
-  .argument('[action]', 'list | show | verify | latest')
+  .description('List, inspect, verify, and sign SWD trust receipts')
+  .argument('[action]', 'list | show | verify | latest | keygen | pubkey')
   .argument('[target]', 'receipt id or latest')
   .option('-n, --limit <n>', 'Number of receipts to show when listing', '10')
   .option('--json', 'Print machine-readable JSON')
+  .option('-f, --force', 'When used with keygen: overwrite an existing keypair')
   .action(receiptsCommand);
 
 // ── mythos init ──────────────────────────────────────────────
