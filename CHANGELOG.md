@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.9.0] — 2026-05-22
+
+### Added
+- **`mythos doctor` command** — Re-runnable health check that inspects environment (Node, `node:sqlite`, git), providers (Anthropic / OpenAI / DeepSeek), project state (`.mythosignore`, `MEMORY.md`), and optional subsystems (FTS5 index, SWD receipts). Supports `--json` for automation; exits non-zero when any critical check fails.
+- **Tag-triggered release pipeline** (`.github/workflows/release.yml`) — Verifies build + tests, asserts `package.json` version matches the tag and `CHANGELOG.md` has an entry, runs a tarball smoke install of the published artifact, publishes to npm with `--provenance` under the `next` dist-tag by default, then creates a GitHub Release with notes extracted from the matching CHANGELOG section.
+- **Manual `@next` → `@latest` promotion workflow** (`.github/workflows/release-promote.yml`) — Promotes a previously-published version to a target dist-tag without re-publishing.
+- **Tarball smoke job in CI** — Every PR now `npm pack`s, installs the artifact in a temp directory, and exercises the published `mythos` binary. Catches `bin` path, `files` glob, and `prepublishOnly` regressions before they ship.
+- **Node 20 in CI matrix** — Exercises the graceful-degradation path on runtimes without `node:sqlite`.
+- **Pricing freshness check** (`scripts/check-pricing.ts` + `.github/workflows/pricing-check.yml`) — Weekly cross-reference between `src/providers/pricing.ts` and Anthropic's published pricing docs. Opens (or comments on) a single `pricing-drift`-labeled GitHub issue when a model's input/output price diverges from upstream. Available locally as `npm run pricing:check` (`--json` supported).
+- **`doctor` and `pricing:check` npm scripts** — Convenience runners for the new commands.
+
+### Changed
+- **CI matrix** — Now tests Node 20, 22, and 24 across Ubuntu, macOS, and Windows.
+- **`mythos init` SQLite detection** — Replaced the dead `require('node:sqlite')` block (which always threw under ESM) with a shared runtime detector also used by `mythos doctor`.
+- **Skill loader** — `loadSkill()` now enforces a strict skill-name pattern (`[A-Za-z0-9_-]{1,64}`) and rejects files without YAML frontmatter. Path-style arguments to `-s/--skill` are no longer accepted; custom skills must live at `~/.mythos-router/skills/<name>/SKILL.md`.
+- **Pricing table** — Dropped retired models `claude-sonnet-3-5` and `claude-haiku-3` from the registry (no longer listed on Anthropic's docs). Requests against those IDs fall back to the conservative `FALLBACK_PRICING`.
+
+### Fixed
+- **OpenAI / DeepSeek token accounting** — Streaming requests now send `stream_options.include_usage: true`, so budget, receipts, and the stats dashboard receive real `prompt_tokens` / `completion_tokens` from providers that support it. The chars/4 estimate is retained as a fallback.
+
+### Security
+- **Skill-name path traversal** — Prior `-s ../../../path/to/file` arguments would be resolved verbatim and read as skill content. The strict-name and frontmatter-required guards close this surface.
+
+### Tests
+- **Memory test suite** is now gated on `node:sqlite` availability so Node 20 runners skip cleanly rather than asserting database state that cannot exist.
+
+---
+
 ## [1.8.0] — 2026-05-15
 
 ### Added
